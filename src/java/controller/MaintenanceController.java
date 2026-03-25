@@ -16,8 +16,10 @@ public class MaintenanceController extends HttpServlet {
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
         User user = (User) request.getSession().getAttribute("LOGIN_USER");
 
-        // CHỈ CHO PHÉP ADMIN VÀ TECHNICIAN TRUY CẬP (Đã chặn OPERATOR, GUEST, AUDITOR)
-        if (user == null || (!"ADMIN".equals(user.getRole()) && !"TECHNICIAN".equals(user.getRole()))) {
+        // ADMIN / TECHNICIAN / AUDITOR được phép xem
+        if (user == null || (!"ADMIN".equals(user.getRole())
+                && !"TECHNICIAN".equals(user.getRole())
+                && !"AUDITOR".equals(user.getRole()))) {
             response.sendRedirect("DashboardController?error=permission_denied");
             return;
         }
@@ -26,11 +28,9 @@ public class MaintenanceController extends HttpServlet {
         AlertDAO dao = new AlertDAO();
 
         if ("history".equals(view)) {
-            // Xem lịch sử bảo trì
             request.setAttribute("MAINTENANCE_HISTORY", dao.getMaintenanceHistory());
             request.getRequestDispatcher("maintenance_history.jsp").forward(request, response);
         } else {
-            // Mặc định: Xem các lỗi đang Active (Cần sửa chữa)
             request.setAttribute("ACTIVE_ALERTS", dao.getActiveAlerts());
             request.getRequestDispatcher("active_alerts.jsp").forward(request, response);
         }
@@ -40,7 +40,7 @@ public class MaintenanceController extends HttpServlet {
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
         User user = (User) request.getSession().getAttribute("LOGIN_USER");
 
-        // CHỈ CHO PHÉP ADMIN VÀ TECHNICIAN SỬA LỖI
+        // Chỉ ADMIN / TECHNICIAN được sửa
         if (user == null || (!"ADMIN".equals(user.getRole()) && !"TECHNICIAN".equals(user.getRole()))) {
             response.sendRedirect("DashboardController?error=permission_denied");
             return;
@@ -50,8 +50,8 @@ public class MaintenanceController extends HttpServlet {
         if ("resolve_alert".equals(action)) {
             int alertId = Integer.parseInt(request.getParameter("alert_id"));
             int deviceId = Integer.parseInt(request.getParameter("device_id"));
-            String ticketType = request.getParameter("ticket_type"); // CLEAN, FILTER, VALVE
-            String actionCode = request.getParameter("action_code"); // INSPECTED, CLEANED...
+            String ticketType = request.getParameter("ticket_type");
+            String actionCode = request.getParameter("action_code");
             String note = request.getParameter("note");
 
             AlertDAO dao = new AlertDAO();
@@ -60,6 +60,8 @@ public class MaintenanceController extends HttpServlet {
             } else {
                 response.sendRedirect("MaintenanceController?error=resolve_failed");
             }
+        } else {
+            response.sendRedirect("MaintenanceController?error=invalid_action");
         }
     }
 }

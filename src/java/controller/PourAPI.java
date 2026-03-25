@@ -31,7 +31,7 @@ public class PourAPI extends HttpServlet {
 
     private static final Logger LOGGER = Logger.getLogger(PourAPI.class.getName());
 
-    private static final String DEFAULT_MODEL_PATH = "/WEB-INF/model.model";
+    private static final String DEFAULT_MODEL_PATH = "/WEB-INF";
     private static final double ML_REASON_THRESHOLD = 0.80;
 
     private String normUpper(String value, String fallback) {
@@ -88,9 +88,12 @@ public class PourAPI extends HttpServlet {
         jsonObject.addProperty("stop_reason", stopReason);
         jsonObject.addProperty("result_code", resultCode);
 
+        // Đồng bộ với SQL mới:
+        // - stop_reason KHÔNG có NO_CUP
+        // - result_code mới có NO_CUP
         if (!cupPresent) {
-            jsonObject.addProperty("stop_reason", "NO_CUP");
-            jsonObject.addProperty("result_code", "SUCCESS");
+            jsonObject.addProperty("stop_reason", "ERROR_ABORT");
+            jsonObject.addProperty("result_code", "NO_CUP");
         }
     }
 
@@ -100,12 +103,23 @@ public class PourAPI extends HttpServlet {
      */
     private void applyWekaLogic(JsonObject jsonObject, HttpServletRequest request) {
         String finalStopReason = normUpper(getString(jsonObject, "stop_reason", "AUTO_PROFILE"), "AUTO_PROFILE");
+        String finalResultCode = normUpper(getString(jsonObject, "result_code", "SUCCESS"), "SUCCESS");
 
-        boolean mlEligible = !"MANUAL_BUTTON".equals(finalStopReason);
+        boolean mlEligible
+                = !"MANUAL_BUTTON".equals(finalStopReason)
+                && !"NO_CUP".equals(finalResultCode);
+
         jsonObject.addProperty("ml_eligible", mlEligible);
 
         if (!mlEligible) {
-            jsonObject.addProperty("ml_exclusion_reason", "MANUAL_BUTTON");
+            if ("MANUAL_BUTTON".equals(finalStopReason)) {
+                jsonObject.addProperty("ml_exclusion_reason", "MANUAL_BUTTON");
+            } else if ("NO_CUP".equals(finalResultCode)) {
+                jsonObject.addProperty("ml_exclusion_reason", "NO_CUP");
+            } else {
+                jsonObject.addProperty("ml_exclusion_reason", "RULE_EXCLUDED");
+            }
+
             jsonObject.remove("ml_risk_score");
             jsonObject.remove("ml_reason_json");
             return;
@@ -117,14 +131,26 @@ public class PourAPI extends HttpServlet {
                 getServletContext().getRealPath(DEFAULT_MODEL_PATH)
         );
 
+        double targetMl = getDouble(jsonObject, "target_ml", 0.0);
         double actualMl = getDouble(jsonObject, "actual_ml", 0.0);
         double durationS = getDouble(jsonObject, "duration_s", 0.0);
+
+        double peakFlow = computePeakFlowFromTelemetry(jsonObject);
         double avgFlow = (durationS > 0.0) ? (actualMl / durationS) : 0.0;
 
         PourSession tempSession = new PourSession();
+        tempSession.setTargetMl(targetMl);
         tempSession.setActualMl(actualMl);
         tempSession.setDuration(durationS);
+        tempSession.setPeakFlow(peakFlow);
         tempSession.setAvgFlow(avgFlow);
+
+        System.out.println("WEKA session features:"
+                + " target_ml=" + targetMl
+                + ", actual_ml=" + actualMl
+                + ", duration_s=" + durationS
+                + ", peak_flow=" + peakFlow
+                + ", avg_flow=" + avgFlow);
 
         double riskScore = weka.analyzeSessionRisk(tempSession);
 
@@ -313,5 +339,41 @@ public class PourAPI extends HttpServlet {
                     "{\"status\":\"error\", \"message\":\"System Error\"}"
             );
         }
+    }
+
+    private double computePeakFlowFromTelemetry(JsonObject jsonObject) {
+        if (jsonObject == null || !jsonObject.has("telemetry") || !jsonObject.get("telemetry").isJsonArray()) {
+            return 0.0;
+        }
+
+        JsonArray telemetry = jsonObject.getAsJsonArray("telemetry");
+        double peak = 0.0;
+
+        for (JsonElement el : telemetry) {
+            if (el == null || !el.isJsonObject()) {
+                continue;
+            }
+
+            JsonObject obj = el.getAsJsonObject();
+            int sensorTypeId = (int) getDouble(obj, "sensor_type_id", -1);
+            if (sensorTypeId != 2) { // FLOW
+                continue;
+            }
+
+            double value = getDouble(obj, "filtered_value", Double.NaN);
+            if (Double.isNaN(value)) {
+                value = getDouble(obj, "value", 0.0);
+            }
+
+            if (value > peak) {
+                peak = value;
+            }
+        }
+
+        return peak;
+    }
+
+    private double computeAvgFlowFromTelemetry(JsonObject jsonObject, double actualMl, double durationS) {
+        return (durationS > 0.0) ? (actualMl / durationS) : 0.0;
     }
 }

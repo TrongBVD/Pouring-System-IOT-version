@@ -41,7 +41,7 @@
                 </div>
             </c:if>
 
-            <c:if test="${sessionScope.LOGIN_USER.role != 'AUDITOR'}">
+            <c:if test="${sessionScope.LOGIN_USER.role != 'AUDITOR' && sessionScope.LOGIN_USER.role != 'TECHNICIAN'}">
                 <div style="display: flex; gap: 40px; align-items: center; margin-bottom: 20px;">
                     <c:choose>
                         <c:when test="${DEVICE.status == 'ERROR' || DEVICE.status == 'OFFLINE'}">
@@ -58,6 +58,7 @@
                         </c:otherwise>
                     </c:choose>
                 </div>
+
                 <script>
                     setInterval(function () {
                         fetch('PourController?action=ping')
@@ -66,12 +67,15 @@
                                     let btn = document.getElementById('btnPour');
                                     let txt = document.getElementById('pourStatusText');
 
+                                    if (!btn || !txt)
+                                        return;
+
                                     if (data.trim() === 'OK_ACTIVE') {
                                         btn.style.backgroundColor = '#3498db';
                                         btn.style.pointerEvents = 'auto';
                                         txt.innerText = 'Device ready (Click to pour)';
                                     } else if (data.trim() === 'OK_MAINTENANCE') {
-                                        btn.style.backgroundColor = '#34495e'; // Màu tối xám
+                                        btn.style.backgroundColor = '#34495e';
                                         btn.style.pointerEvents = 'none';
                                         txt.innerText = 'SYSTEM LOCKED: Under maintenance';
                                     } else {
@@ -80,8 +84,12 @@
                                         txt.innerText = 'Device offline / Pouring in progress';
                                     }
                                 }).catch(e => {
-                            document.getElementById('btnPour').style.pointerEvents = 'none';
-                            document.getElementById('pourStatusText').innerText = 'Lost IoT network connection';
+                            let btn = document.getElementById('btnPour');
+                            let txt = document.getElementById('pourStatusText');
+                            if (btn)
+                                btn.style.pointerEvents = 'none';
+                            if (txt)
+                                txt.innerText = 'Lost IoT network connection';
                         });
                     }, 3000);
 
@@ -104,6 +112,12 @@
                                 });
                     }
                 </script>
+            </c:if>
+
+            <c:if test="${sessionScope.LOGIN_USER.role == 'AUDITOR' || sessionScope.LOGIN_USER.role == 'TECHNICIAN'}">
+                <div style="padding: 20px; background: #ecf0f1; border-radius: 8px; text-align: center; font-weight: bold; margin-bottom: 20px; color: #7f8c8d; border: 1px dashed #bdc3c7;">
+                    You are in view/service mode. This account cannot start the water pouring device.
+                </div>
             </c:if>
 
             <c:if test="${sessionScope.LOGIN_USER.role == 'AUDITOR'}">
@@ -147,40 +161,57 @@
             <c:if test="${sessionScope.LOGIN_USER.role != 'GUEST' && sessionScope.LOGIN_USER.role != 'OPERATOR'}">
                 <div class="admin-panel" style="margin-top: 20px; text-align: left;">
                     <h3 style="margin-bottom: 15px;">System Logs & Records</h3>
-                    <div style="display: flex; gap: 20px;">
+                    <div style="display: flex; gap: 20px; flex-wrap: wrap;">
                         <a href="PourHistoryController" class="btn btn-primary" style="text-decoration:none; padding: 10px 15px; border-radius: 5px; text-align:center; flex:1;">
                             📊 Pour History<br><small>(Water pouring history)</small>
                         </a>
+
                         <a href="PourSessionMetaController" class="btn" style="background-color:#8e44ad; color:white; text-decoration:none; padding: 10px 15px; border-radius: 5px; text-align:center; flex:1;">
-                            🧩 Pour Session Meta<br><small>(View / adjust metadata)</small>
+                            🧩 Pour Session Meta<br>
+                            <small>
+                                <c:choose>
+                                    <c:when test="${sessionScope.LOGIN_USER.role == 'AUDITOR'}">(View only)</c:when>
+                                    <c:otherwise>(View / adjust metadata)</c:otherwise>
+                                </c:choose>
+                            </small>
                         </a>
+
                         <c:if test="${sessionScope.LOGIN_USER.role == 'AUDITOR' || sessionScope.LOGIN_USER.role == 'ADMIN' || sessionScope.LOGIN_USER.role == 'TECHNICIAN'}">
                             <a href="SensorLogController" class="btn" style="background-color:#3498db; color:white; text-decoration:none; padding: 10px 15px; border-radius: 5px; text-align:center; flex:1;">
                                 📈 Sensor Logs<br><small>(Raw data & metadata)</small>
                             </a>
+
                             <a href="SensorHealthController" class="btn" style="background-color:#16a085; color:white; text-decoration:none; padding: 10px 15px; border-radius: 5px; text-align:center; flex:1;">
                                 🩺 Health Report<br><small>(Device metrics every 5 minutes)</small>
                             </a>
+
                             <c:if test="${sessionScope.LOGIN_USER.role == 'AUDITOR' || sessionScope.LOGIN_USER.role == 'ADMIN'}">
                                 <a href="AuditLogController" class="btn" style="background-color:#8e44ad; color:white; text-decoration:none; padding: 10px 15px; border-radius: 5px; text-align:center; flex:1;">
                                     🔒 Full Audit Logs<br><small>(Blockchain hash chain)</small>
                                 </a>
                             </c:if>
-                            <c:if test="${sessionScope.LOGIN_USER.role == 'ADMIN' || sessionScope.LOGIN_USER.role == 'TECHNICIAN'}">
+
+                            <c:if test="${sessionScope.LOGIN_USER.role == 'ADMIN' || sessionScope.LOGIN_USER.role == 'TECHNICIAN' || sessionScope.LOGIN_USER.role == 'AUDITOR'}">
                                 <a href="MaintenanceController" class="btn" style="background-color:#e67e22; color:white; text-decoration:none; padding: 10px 15px; border-radius: 5px; text-align:center; flex:1; position: relative;">
-                                    🛠️ Maintenance 
-                                    <c:if test="${ACTIVE_ALERT_COUNT > 0}">
+                                    🛠️ Maintenance
+                                    <c:if test="${ACTIVE_ALERT_COUNT > 0 && sessionScope.LOGIN_USER.role != 'AUDITOR'}">
                                         <span style="position: absolute; top: -10px; right: -10px; background: #e74c3c; color: white; border-radius: 50%; padding: 5px 10px; font-weight: bold; font-size: 14px;">
                                             ${ACTIVE_ALERT_COUNT}
                                         </span>
                                     </c:if>
-                                    <br><small>(Maintenance & issues)</small>
+                                    <br>
+                                    <small>
+                                        <c:choose>
+                                            <c:when test="${sessionScope.LOGIN_USER.role == 'AUDITOR'}">(View only)</c:when>
+                                            <c:otherwise>(Maintenance & issues)</c:otherwise>
+                                        </c:choose>
+                                    </small>
                                 </a>
                             </c:if>
-                        </div>
+                        </c:if>
                     </div>
-                </c:if>
-            </c:if>    
+                </div>
+            </c:if>   
         </div>
     </body>
 </html>

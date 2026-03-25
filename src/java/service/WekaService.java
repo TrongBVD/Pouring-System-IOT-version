@@ -17,10 +17,10 @@ import java.util.Map;
 
 public class WekaService {
 
-    // Chọn champion model chính thức
+    // Champion model chính
     private static final String CHAMPION_MODEL = "Logistics.model";
 
-    // Chạy shadow để log so sánh
+    // Shadow models
     private static final String[] MODEL_FILES = new String[]{
         "Logistics.model",
         "NaivesBayes.model",
@@ -28,8 +28,10 @@ public class WekaService {
         "Hoeffding.model"
     };
 
-    // Schema feature hiện tại:
-    // actual_ml, duration_s, avg_flow
+    /**
+     * Schema đúng theo dataset train: 1) target_ml 2) actual_ml 3) duration_s
+     * 4) peak_flow 5) avg_flow 6) class = {0,1}
+     */
     private Instances dataStructure;
 
     private final Map<String, Classifier> loadedModels = new LinkedHashMap<>();
@@ -42,13 +44,16 @@ public class WekaService {
 
     private void buildDataStructure() {
         ArrayList<Attribute> attributes = new ArrayList<>();
+
+        attributes.add(new Attribute("target_ml"));
         attributes.add(new Attribute("actual_ml"));
         attributes.add(new Attribute("duration_s"));
+        attributes.add(new Attribute("peak_flow"));
         attributes.add(new Attribute("avg_flow"));
 
         ArrayList<String> classValues = new ArrayList<>();
-        classValues.add("NORMAL");
-        classValues.add("ANOMALY");
+        classValues.add("0"); // NORMAL
+        classValues.add("1"); // ANOMALY
 
         attributes.add(new Attribute("class", classValues));
 
@@ -81,11 +86,18 @@ public class WekaService {
         if (!championLoaded) {
             System.err.println("WEKA: Champion model not loaded. Service will run in Simulation Mode.");
         }
+
+        System.out.println("WEKA webInfPath = " + webInfPath);
     }
 
     private String resolveModelPath(String webInfPath, String fileName) {
         if (webInfPath == null || webInfPath.trim().isEmpty()) {
             return null;
+        }
+
+        // Workaround nếu caller lỡ truyền ...\WEB-INF\model.model
+        if (webInfPath.endsWith(".model")) {
+            webInfPath = webInfPath.substring(0, webInfPath.length() - 6);
         }
 
         File direct = new File(webInfPath, fileName);
@@ -98,12 +110,18 @@ public class WekaService {
             return underModels.getAbsolutePath();
         }
 
+        File underModel = new File(new File(webInfPath, "model"), fileName);
+        if (underModel.exists() && underModel.isFile()) {
+            return underModel.getAbsolutePath();
+        }
+
+        System.out.println("WEKA checking: " + direct.getAbsolutePath());
+        System.out.println("WEKA checking: " + underModels.getAbsolutePath());
+        System.out.println("WEKA checking: " + underModel.getAbsolutePath());
+
         return null;
     }
 
-    /**
-     * Hàm wrapper trả về điểm risk duy nhất cho chỗ gọi cũ.
-     */
     public double analyzeSessionRisk(PourSession session) {
         MlScoringResult result = scoreSession(session);
         if (result == null) {
@@ -112,9 +130,6 @@ public class WekaService {
         return result.getChampionScore();
     }
 
-    /**
-     * Hàm wrapper lấy reason_json cho AlertReason / log giải thích.
-     */
     public String analyzeReasonJson(PourSession session) {
         MlScoringResult result = scoreSession(session);
         if (result == null) {
@@ -123,9 +138,6 @@ public class WekaService {
         return result.getReasonJson();
     }
 
-    /**
-     * Hàm đầy đủ: trả về cả champion score, reasonJson, shadow scores...
-     */
     public MlScoringResult scoreSession(PourSession session) {
         Map<String, Double> shadowScores = new LinkedHashMap<>();
 
@@ -199,55 +211,74 @@ public class WekaService {
         Instance instance = new DenseInstance(dataStructure.numAttributes());
         instance.setDataset(dataStructure);
 
-        instance.setValue(0, safe(session.getActualMl()));
-        instance.setValue(1, safe(session.getDuration()));
-        instance.setValue(2, safe(session.getAvgFlow()));
+        instance.setValue(0, safe(session.getTargetMl()));
+        instance.setValue(1, safe(session.getActualMl()));
+        instance.setValue(2, safe(session.getDuration()));
+        instance.setValue(3, safe(session.getPeakFlow()));
+        instance.setValue(4, safe(session.getAvgFlow()));
 
         instance.setMissing(dataStructure.classIndex());
 
         double[] probabilities = model.distributionForInstance(instance);
+
         int positiveIndex = getPositiveClassIndex();
 
         if (probabilities == null || positiveIndex < 0 || positiveIndex >= probabilities.length) {
             return 0.0;
         }
 
+        System.out.println("WEKA input:"
+                + " target_ml=" + safe(session.getTargetMl())
+                + ", actual_ml=" + safe(session.getActualMl())
+                + ", duration_s=" + safe(session.getDuration())
+                + ", peak_flow=" + safe(session.getPeakFlow())
+                + ", avg_flow=" + safe(session.getAvgFlow()));
+
+        System.out.println("WEKA probabilities = " + java.util.Arrays.toString(probabilities));
+        System.out.println("WEKA positiveIndex = " + positiveIndex);
+
         return clamp01(probabilities[positiveIndex]);
     }
 
+    /**
+     * Class của bạn là 0/1, trong đó: 0 = bình thường 1 = bất thường
+     */
     private int getPositiveClassIndex() {
         Attribute cls = dataStructure.classAttribute();
 
-        String[] positiveCandidates = new String[]{
-            "ANOMALY", "ABNORMAL", "POSITIVE", "YES", "TRUE", "1"
-        };
-
-        for (String candidate : positiveCandidates) {
-            for (int i = 0; i < cls.numValues(); i++) {
-                if (candidate.equalsIgnoreCase(cls.value(i))) {
-                    return i;
-                }
+        for (int i = 0; i < cls.numValues(); i++) {
+            if ("1".equals(cls.value(i))) {
+                return i;
             }
         }
 
-        // fallback: lấy class cuối cùng làm positive
+        // fallback: class cuối
         return Math.max(0, cls.numValues() - 1);
     }
 
+    /**
+     * Fallback khi model lỗi hoặc chưa load được.
+     */
     private double simulateRisk(PourSession session) {
+        double target = safe(session.getTargetMl());
         double actual = safe(session.getActualMl());
         double duration = safe(session.getDuration());
+        double peakFlow = safe(session.getPeakFlow());
         double avgFlow = safe(session.getAvgFlow());
 
-        if (duration > 25.0 && actual < 400.0) {
+        if (target > 0 && actual > target * 1.15) {
             return 0.90;
         }
 
-        if (avgFlow > 25.0) {
+        if (duration > 25.0 && actual < 0.80 * Math.max(target, 1.0)) {
             return 0.85;
         }
 
-        if (actual > 300.0) {
+        if (peakFlow > 65.0) {
+            return 0.80;
+        }
+
+        if (avgFlow > 25.0) {
             return 0.75;
         }
 
@@ -255,32 +286,32 @@ public class WekaService {
     }
 
     /**
-     * reason_json này là heuristic explanation cho app/prototype, không phải
-     * native feature importance của chính model Weka.
+     * reason_json heuristic để app/DB log giải thích.
      */
     private String buildReasonJson(PourSession session, double riskScore) {
         JsonArray arr = new JsonArray();
 
         addReason(arr, "WEKA_CHAMPION_SCORE", clamp01(riskScore), 1);
 
-        double durationSignal = clamp01(safe(session.getDuration()) / 25.0);
-        double avgFlowSignal = clamp01(safe(session.getAvgFlow()) / 25.0);
-
-        double actualVsExpectedSignal = 0.0;
-        double actualMl = safe(session.getActualMl());
+        double target = safe(session.getTargetMl());
+        double actual = safe(session.getActualMl());
         double duration = safe(session.getDuration());
+        double peakFlow = safe(session.getPeakFlow());
         double avgFlow = safe(session.getAvgFlow());
 
-        if (actualMl > 0.0) {
-            double expectedAvg = duration > 0.0 ? (actualMl / duration) : 0.0;
-            if (expectedAvg > 0.0) {
-                actualVsExpectedSignal = clamp01(avgFlow / expectedAvg);
-            }
+        double overTargetSignal = 0.0;
+        if (target > 0.0) {
+            overTargetSignal = clamp01(actual / target);
         }
 
-        addReason(arr, "AVG_FLOW_SIGNAL", avgFlowSignal, 2);
-        addReason(arr, "DURATION_SIGNAL", durationSignal, 3);
-        addReason(arr, "SESSION_PATTERN_SIGNAL", actualVsExpectedSignal, 4);
+        double durationSignal = clamp01(duration / 25.0);
+        double peakFlowSignal = clamp01(peakFlow / 65.0);
+        double avgFlowSignal = clamp01(avgFlow / 25.0);
+
+        addReason(arr, "OVER_TARGET_SIGNAL", overTargetSignal, 2);
+        addReason(arr, "PEAK_FLOW_SIGNAL", peakFlowSignal, 3);
+        addReason(arr, "AVG_FLOW_SIGNAL", avgFlowSignal, 4);
+        addReason(arr, "DURATION_SIGNAL", durationSignal, 5);
 
         return arr.toString();
     }

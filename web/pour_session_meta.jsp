@@ -98,19 +98,38 @@
                             <td>
                                 <c:choose>
                                     <c:when test="${sessionScope.LOGIN_USER.role == 'ADMIN' || sessionScope.LOGIN_USER.role == 'TECHNICIAN'}">
-                                        <form action="PourSessionMetaController" method="POST" style="margin:0; display:flex; flex-direction:column; gap:8px; min-width:260px;">
+                                        <form action="PourSessionMetaController" method="POST" style="margin:0; display:flex; flex-direction:column; gap:8px; min-width:280px;">
                                             <input type="hidden" name="action" value="update_meta">
                                             <input type="hidden" name="session_id" value="${m.sessionId}">
 
+                                            <div class="readonly" style="background:#f8f9fa; padding:8px; border-radius:4px; border:1px solid #ddd;">
+                                                <strong>Current ML Eligible:</strong>
+                                                <c:choose>
+                                                    <c:when test="${m.mlEligible}">1 (true / eligible)</c:when>
+                                                    <c:otherwise>0 (false / excluded)</c:otherwise>
+                                                </c:choose>
+                                                <br>
+                                                <strong>Current Exclusion Reason:</strong>
+                                                <c:out value="${empty m.mlExclusionReason ? 'NULL' : m.mlExclusionReason}"/>
+                                            </div>
+
                                             <label>ML Eligible</label>
                                             <select name="ml_eligible">
-                                                <option value="">Keep unchanged</option>
-                                                <option value="1">true</option>
-                                                <option value="0">false</option>
+                                                <option value="">Keep current value</option>
+                                                <option value="1">1 = true / eligible</option>
+                                                <option value="0">0 = false / excluded</option>
                                             </select>
 
                                             <label>ML Exclusion Reason</label>
                                             <input type="text" name="ml_exclusion_reason" placeholder="Example: SENSOR_NOISY / MANUAL_EXCLUDE">
+
+                                            <div class="readonly" style="background:#f8f9fa; padding:8px; border-radius:4px; border:1px solid #ddd;">
+                                                <strong>Current Curated Result:</strong>
+                                                <c:out value="${empty m.curatedResultCode ? 'NULL' : m.curatedResultCode}"/>
+                                                <br>
+                                                <strong>Current Curated Note:</strong>
+                                                <c:out value="${empty m.curatedNote ? 'NULL' : m.curatedNote}"/>
+                                            </div>
 
                                             <label>Curated Result Code</label>
                                             <select name="curated_result_code">
@@ -131,8 +150,30 @@
                                             </button>
                                         </form>
                                     </c:when>
+
                                     <c:otherwise>
-                                        <span class="readonly">This page is view-only. Only ADMIN / TECHNICIAN can make adjustments.</span>
+                                        <div class="readonly" style="min-width:280px;">
+                                            <strong>View-only mode.</strong><br>
+                                            Only ADMIN / TECHNICIAN can make adjustments.<br><br>
+
+                                            <strong>Current ML Eligible:</strong>
+                                            <c:choose>
+                                                <c:when test="${m.mlEligible}">1 (true / eligible)</c:when>
+                                                <c:otherwise>0 (false / excluded)</c:otherwise>
+                                            </c:choose>
+                                            <br>
+
+                                            <strong>Current Exclusion Reason:</strong>
+                                            <c:out value="${empty m.mlExclusionReason ? 'NULL' : m.mlExclusionReason}"/>
+                                            <br>
+
+                                            <strong>Current Curated Result:</strong>
+                                            <c:out value="${empty m.curatedResultCode ? 'NULL' : m.curatedResultCode}"/>
+                                            <br>
+
+                                            <strong>Current Curated Note:</strong>
+                                            <c:out value="${empty m.curatedNote ? 'NULL' : m.curatedNote}"/>
+                                        </div>
                                     </c:otherwise>
                                 </c:choose>
                             </td>
