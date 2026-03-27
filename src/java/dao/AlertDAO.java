@@ -30,7 +30,9 @@ public class AlertDAO {
         String sql = "SELECT a.alert_id, a.device_id, a.session_id, a.alert_type, a.risk_score, a.created_at, ae.summary_text "
                 + "FROM Alert a LEFT JOIN AlertEvidence ae ON a.alert_id = ae.alert_id AND ae.evidence_type = 'RULE' "
                 + "WHERE a.status IN ('OPEN', 'IN_PROGRESS') ORDER BY a.created_at DESC";
+
         try ( Connection conn = DBContext.getConnection();  PreparedStatement ps = conn.prepareStatement(sql);  ResultSet rs = ps.executeQuery()) {
+
             while (rs.next()) {
                 Map<String, Object> map = new HashMap<>();
                 map.put("alertId", rs.getInt("alert_id"));
@@ -57,7 +59,9 @@ public class AlertDAO {
                 + "LEFT JOIN MaintenanceLog ml ON m.ticket_id = ml.ticket_id "
                 + "LEFT JOIN Users u ON ml.technician_id = u.user_id "
                 + "ORDER BY m.opened_at DESC";
+
         try ( Connection conn = DBContext.getConnection();  PreparedStatement ps = conn.prepareStatement(sql);  ResultSet rs = ps.executeQuery()) {
+
             while (rs.next()) {
                 Map<String, Object> map = new HashMap<>();
                 map.put("ticketId", rs.getInt("ticket_id"));
@@ -77,53 +81,58 @@ public class AlertDAO {
         return list;
     }
 
-    // 4. Xử lý lỗi (Resolve Alert) - Đóng Alert và tạo Maintenance Ticket + Log
+    // 4. Xử lý lỗi (Resolve Alert) - đi qua stored procedure có audit
     public boolean resolveAlert(int alertId, int deviceId, String ticketType, String actionCode, String note, User actor) {
-        String sqlAlert = "UPDATE Alert SET status = 'RESOLVED', resolved_at = SYSUTCDATETIME(), assigned_to = ? WHERE alert_id = ?";
-        String sqlTicket = "INSERT INTO MaintenanceTicket (device_id, ticket_type, note, status, closed_at) VALUES (?, ?, ?, 'CLOSED', SYSUTCDATETIME())";
-        String sqlLog = "INSERT INTO MaintenanceLog (ticket_id, technician_id, action_code, note) VALUES (?, ?, ?, ?)";
+        String sql = "{call dbo.Alert_Resolve_Maintenance(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)}";
 
-        try ( Connection conn = DBContext.getConnection()) {
-            conn.setAutoCommit(false); // Bắt đầu Transaction
+        if (actor == null) {
+            return false;
+        }
 
-            try {
-                // 1. Đóng Alert
-                try ( PreparedStatement ps = conn.prepareStatement(sqlAlert)) {
-                    ps.setInt(1, actor.getUserId());
-                    ps.setInt(2, alertId);
-                    ps.executeUpdate();
-                }
+        try ( Connection conn = DBContext.getConnection();  CallableStatement cs = conn.prepareCall(sql)) {
 
-                // 2. Tạo Ticket bảo trì
-                int ticketId = -1;
-                try ( PreparedStatement ps = conn.prepareStatement(sqlTicket, Statement.RETURN_GENERATED_KEYS)) {
-                    ps.setInt(1, deviceId);
-                    ps.setString(2, ticketType);
-                    ps.setString(3, note);
-                    ps.executeUpdate();
-                    ResultSet rs = ps.getGeneratedKeys();
-                    if (rs.next()) {
-                        ticketId = rs.getInt(1);
-                    }
-                }
+            String actorRole = actor.getRole() == null ? "UNKNOWN" : actor.getRole().trim().toUpperCase();
+            String safeTicketType = ticketType == null ? null : ticketType.trim().toUpperCase();
+            String safeActionCode = actionCode == null ? null : actionCode.trim().toUpperCase();
+            String safeTicketNote = (note == null || note.trim().isEmpty()) ? null : note.trim();
+            String safeLogNote = "Alert #" + alertId + " resolved"
+                    + (safeTicketNote != null ? ". " + safeTicketNote : "");
 
-                // 3. Ghi Log chi tiết hành động
-                if (ticketId != -1) {
-                    try ( PreparedStatement ps = conn.prepareStatement(sqlLog)) {
-                        ps.setInt(1, ticketId);
-                        ps.setInt(2, actor.getUserId());
-                        ps.setString(3, actionCode);
-                        ps.setString(4, "Alert #" + alertId + " Resolved. " + note);
-                        ps.executeUpdate();
-                    }
-                }
+            // Input params
+            cs.setInt(1, alertId);                 // @alert_id
+            cs.setInt(2, deviceId);                // @device_id
+            cs.setString(3, safeTicketType);       // @ticket_type
+            cs.setString(4, safeActionCode);       // @action_code
+            cs.setString(5, safeTicketNote);       // @ticket_note
+            cs.setString(6, safeLogNote);          // @log_note
+            cs.setInt(7, actor.getUserId());       // @actor_user_id
+            cs.setString(8, actorRole);            // @actor_role_name
 
-                conn.commit(); // Hoàn tất Transaction
-                return true;
-            } catch (SQLException ex) {
-                conn.rollback();
-                ex.printStackTrace();
-            }
+            // @evidence_id = NULL
+            cs.setNull(9, Types.INTEGER);
+
+            // Output params
+            cs.registerOutParameter(10, Types.INTEGER);  // @new_ticket_id
+            cs.registerOutParameter(11, Types.INTEGER);  // @new_maintenance_log_id
+            cs.registerOutParameter(12, Types.INTEGER);  // @audit_id
+            cs.registerOutParameter(13, Types.CHAR);     // @chain_hash
+
+            cs.execute();
+
+            int newTicketId = cs.getInt(10);
+            int newMaintenanceLogId = cs.getInt(11);
+            int auditId = cs.getInt(12);
+            String chainHash = cs.getString(13);
+
+            System.out.println("Maintenance resolved via proc:"
+                    + " alertId=" + alertId
+                    + ", ticketId=" + newTicketId
+                    + ", maintenanceLogId=" + newMaintenanceLogId
+                    + ", auditId=" + auditId
+                    + ", chainHash=" + chainHash);
+
+            return true;
+
         } catch (Exception e) {
             e.printStackTrace();
         }

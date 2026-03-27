@@ -201,12 +201,16 @@
         </style>
     </head>
     <body>
-        <div class="banner">
-            <h2>Pour History</h2>
-            <div>
-                <a href="PourSessionMetaController" style="color: white; text-decoration: none; margin-right: 15px;">Open Pour Session Meta page</a>
-                <a href="DashboardController" style="color: white; text-decoration: none;">Back to Dashboard</a>
-            </div>
+        <div>
+            <c:if test="${sessionScope.LOGIN_USER.role == 'ADMIN' 
+                          || sessionScope.LOGIN_USER.role == 'TECHNICIAN' 
+                          || sessionScope.LOGIN_USER.role == 'AUDITOR'}">
+                  <a href="PourSessionMetaController" style="color: white; text-decoration: none; margin-right: 15px;">
+                      Open Pour Session Meta page
+                  </a>
+            </c:if>
+
+            <a href="DashboardController" style="color: white; text-decoration: none;">Back to Dashboard</a>
         </div>
 
         <div class="history-page">
@@ -218,7 +222,12 @@
                     </div>
 
                     <div class="history-actions">
-                        <a class="history-btn secondary" href="PourSessionMetaController">Open Meta Page</a>
+                        <c:if test="${sessionScope.LOGIN_USER.role == 'ADMIN' 
+                                      || sessionScope.LOGIN_USER.role == 'TECHNICIAN' 
+                                      || sessionScope.LOGIN_USER.role == 'AUDITOR'}">
+                              <a class="history-btn secondary" href="PourSessionMetaController">Open Meta Page</a>
+                        </c:if>
+
                         <a class="history-btn" href="DashboardController">Back to Dashboard</a>
                     </div>
                 </div>

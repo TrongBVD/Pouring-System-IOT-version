@@ -168,10 +168,15 @@
                         <div class="form-group">
                             <label>Corrective action (Action):</label>
                             <select name="action_code" class="form-control" required>
-                                <option value="RECALIBRATED">Recalibrated</option>
-                                <option value="CLEANED">Pipe cleaned</option>
-                                <option value="VALVE_ADJUSTED">Pump adjusted</option>
-                                <option value="NO_ISSUE_FOUND">No issue found / False alarm</option>
+                                <option value="INSPECTED">INSPECTED - Inspection completed</option>
+                                <option value="CLEANED">CLEANED - Cleaned</option>
+                                <option value="FILTER_REPLACED">FILTER_REPLACED - Filter replaced</option>
+                                <option value="VALVE_ADJUSTED">VALVE_ADJUSTED - Valve adjusted</option>
+                                <option value="VALVE_REPLACED">VALVE_REPLACED - Valve replaced</option>
+                                <option value="RECALIBRATED">RECALIBRATED - Recalibrated</option>
+                                <option value="TEST_POUR">TEST_POUR - Test pour performed</option>
+                                <option value="NO_ISSUE_FOUND">NO_ISSUE_FOUND - No issue found</option>
+                                <option value="ESCALATED">ESCALATED - Escalated</option>
                             </select>
                         </div>
 
