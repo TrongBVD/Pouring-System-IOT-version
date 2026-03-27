@@ -120,12 +120,6 @@
                 </div>
             </c:if>
 
-            <c:if test="${sessionScope.LOGIN_USER.role == 'AUDITOR'}">
-                <div style="padding: 20px; background: #ecf0f1; border-radius: 8px; text-align: center; font-weight: bold; margin-bottom: 20px; color: #7f8c8d; border: 1px dashed #bdc3c7;">
-                    You are in OBSERVER mode (Auditor). You do not have permission to control the water pouring device.
-                </div>
-            </c:if>
-
             <c:if test="${sessionScope.LOGIN_USER.role == 'ADMIN'}">
                 <div class="admin-panel" style="margin-top: 20px;">
                     <h3>Admin Controls</h3>
